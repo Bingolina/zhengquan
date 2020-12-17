@@ -1,4 +1,6 @@
 '''
+目的：获取东方财富网的所有股票，并爬出哪些机构持有这些股票
+
 用的方法：python3 + selenium webdriver3
 1.要安装的库：selenium,openpyxl
 命令行输入：pip install selenium
@@ -14,7 +16,7 @@ from selenium.webdriver.chrome.options import Options
 from helpFunction import *
 #参数
 path = 'D:\Python\chromedriver.exe'  # chromedriver.exe在哪里
-page_number=1 #默认只要前2页
+page_number=3 #默认只要前2页
 detail_page_number = 1 # 大部分持股详情页只有1页，如果没有定位到下一页就不翻页了
 
 def setupDriver():

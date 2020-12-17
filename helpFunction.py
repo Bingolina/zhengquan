@@ -1,39 +1,67 @@
 import openpyxl
 import datetime
 import os
+import math
 today = datetime.date.today()
-oneday = datetime.timedelta(days=1)
-yesterday = str(today - oneday)
+# oneday = datetime.timedelta(days=1)
+# yesterday = str(today - oneday)
 month = str(datetime.datetime.now().month) + "月"
-save_dir = "save/"+month + '/'
-save_name = save_dir + "/" + str(today) + ".xlsx"
+save_dir = "save/"+str(today) + '/'
+save_name = save_dir + str(today)#缺后缀，在用到的时候，要拼接
+url_save_txt = save_name +"-线程1.txt"
 
-#保存方法1
-def saveResult(each,table_result):
-    if not os.path.exists(save_name):
+def saveTmp(list):#[机构名1，url1，持有机构数量],把那些不成功的机构写入tmp。txt
+    with open(save_name + "-tmp" + '.txt', 'a', encoding='utf-8') as f:# a 是续写！ w 会覆盖重写！
+        line = '-|-'.join(str(k) for k in list) + "\n"  # 原本用的“,”，但是有的机构名称本身含有逗号，引起错位，改用其他符号
+        f.write(line)
+
+def log(string,n):#记录每个线程的log输出
+    with open(save_name + "-log-" + str(n) + '.txt', 'a', encoding='utf-8') as f:
+        line = string + "\n"
+        f.write(line)
+
+
+#分N份保存到N个txt
+#前面的机构，持股数量多达几千，后面的机构少到只有1个，所以用类似斗地主发牌方式，目的：每个线程分的均匀一点
+def saveAndSplit(source,slice_num): # source=[[机构名1，url1，持有机构数量],[机构名2，url2，持有机构数量],[]]
+    total=len(source)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    for i in range(slice_num):
+        with open(save_name + "-线程" +str(i + 1) + '.txt', 'w', encoding='utf-8') as f:
+            for j in range(i, total,slice_num):
+                line= '-|-'.join(str(k) for k in source[j])+"\n" # 原本用的“,”，但是有的机构名称本身含有逗号，引起错位，改用其他符号
+                f.write(line)
+
+
+def saveResult(all_result,n):#n是第几个线程
+    excel_name=save_name+"-线程"+str(n)+".xlsx"
+    if not os.path.exists(excel_name):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         wb = openpyxl.Workbook()
     else:
-        wb = openpyxl.load_workbook(save_name)
-    ws = wb.create_sheet(title=each[0]+" "+each[1])
-    ws.append(["持股日期","当日收盘价（元）","当日涨跌幅（%）","机构名称","持股数量（股）",\
-               "持股市值（元）","持股数量占A股百分比（%）","持股市值变化—1日","持股市值变化—5日","持股市值变化—10日"])
-    for i in table_result:
-        ws.append(i)
-    wb.save(save_name)
-# 保存方法2  ：全部在一张表里
-def saveAllResult(all_result):
-    if not os.path.exists(save_name):
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        wb = openpyxl.Workbook()
+        wb = openpyxl.load_workbook(excel_name)
+    if "all" in wb.sheetnames:
+        ws = wb["all"]
     else:
-        wb = openpyxl.load_workbook(save_name)
-    ws = wb.create_sheet('all',0)
-    ws.append(["持股日期","当日收盘价（元）","当日涨跌幅（%）","机构名称","持股数量（股）",\
-               "持股市值（元）","持股数量占A股百分比（%）","持股市值变化—1日","持股市值变化—5日","持股市值变化—10日"])
+        ws = wb.create_sheet('all',0)
     for each in all_result:
-        for i in each:
-            ws.append(i)
-    wb.save(save_name)
+        ws.append(each)
+    wb.save(excel_name)
+def read_url(file_path): # 读取分好的的urls
+    with open(file_path, 'r', encoding='utf-8') as f:
+        urls = f.readlines()
+    return urls # →['机构名1,url1,持有机构数量\n', '机构名1,url1,持有机构数量\n']
+def getUrl(n):#n是哪个线程
+    file_path = save_name + '-线程' + str(n) +'.txt'
+    urls=read_url(file_path)
+    result=[]
+    for line in urls:
+        l=line.strip().split("-|-")
+        result.append(l)
+    # print(result)
+    return result # →[[机构名，url，持有机构数量],[]]
+
+
+
