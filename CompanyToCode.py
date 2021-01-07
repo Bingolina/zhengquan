@@ -20,8 +20,8 @@ import math
 from time import sleep, ctime
 import threading
 #参数
-path = 'D:\Python\chromedriver.exe'  # 要改，chromedriver.exe在哪里
-page_number=5 #可改（根据机构列表有多少页手动改）
+path = './urs/bin'#'D:\Python\chromedriver.exe'  # 要改，chromedriver.exe在哪里
+page_number=4 #可改（根据机构列表有多少页手动改）
 Company_list_url = "http://data.eastmoney.com/hsgtcg/InstitutionStatistics.aspx" #不用改！！
 nextLoc = '//div[@id="PageCont"]/a[text()="下一页"]' #不用改！！
 
@@ -42,6 +42,8 @@ def setupDriver():
     # driver.set_page_load_timeout(10)   #没了这2句也能跑，这个是页面加载设置超时的时间
     # driver.set_script_timeout(10)
     return driver
+
+## 第一步：获取机构名称、url、该机构持有股数量，并分成N份
 def getNameListAndUrl():
     result=[]
     driver=setupDriver()
@@ -57,8 +59,7 @@ def getNameListAndUrl():
                 WebDriverWait(driver, 20, 0.5).until(EC.presence_of_element_located(nowLoc))  # 等待，直到页面转到第page页，才继续
             else:
                 driver.get(Company_list_url)
-                WebDriverWait(driver, 20, 0.5).until(EC.presence_of_element_located(\
-                    (By.XPATH, '//ul[@class="tabtit"]/li[@class="at"]/a[text()="每日机构统计"]')))  # 只是用来确认是我要的那一页
+                WebDriverWait(driver, 20, 0.5).until(EC.presence_of_element_located((By.XPATH, '//ul[@class="tabtit"]/li[@class="at"]/a[text()="每日机构统计"]')))  # 只是用来确认是我要的那一页
             WebDriverWait(driver, 20, 0.5).until(EC.presence_of_element_located((By.XPATH, "//tbody/tr/td[2]/a")))
         except Exception as e:
             print("没有第",page,"页", repr(e))
@@ -76,6 +77,14 @@ def getNameListAndUrl():
             result.append([name_list[i].text,url_list[i].get_attribute("href"),total_list[i].text])
     driver.close()
     return result
+def Source(n):
+    if not os.path.exists(url_save_txt):
+        source=getNameListAndUrl()
+        total = len(source)
+        print("一共", total, "个机构")
+        saveAndSplit(source,n)#分十份保存到十个txt
+
+## 第二步：每个线程，分别跑对应的机构，获取详情页表格
 def getTable(l,detail_page_number,n): #e.g
     result = []
     company=l[0]
@@ -109,28 +118,22 @@ def getTable(l,detail_page_number,n): #e.g
                 chiGuShiZhi = element.find_element(By.XPATH, 'td[8]').text
                 percent = element.find_element(By.XPATH, 'td[9]').text
                 change_1 = element.find_element(By.XPATH, 'td[10]/span').text
-                result.append([company,str(today),code,name,chiGuShuLiang,chiGuShiZhi,percent,change_1])
+                result.append([company,str(yesterday),code,name,chiGuShuLiang,chiGuShiZhi,percent,change_1])
         except Exception as e:
                 l='线程%d,%s,共%d页，第%d页的表加载完全,但是取数有问题？？ %s' % (n, company, detail_page_number, page, repr(e))
                 log(l, n)
                 break
     driver.close()
     return result #[[],[]]
-def Source(n):
-    if not os.path.exists(url_save_txt):
-        source=getNameListAndUrl()
-        total = len(source)
-        print("一共", total, "个机构")
-        saveAndSplit(source,n)#分十份保存到十个txt
 def runDetail(list,total,n,i):#list=[机构名，url，持有机构数量]
     detail_page_number = math.ceil(int(list[2]) / 50)
-    # detail_page_number=2#测试用
     l='========线程%d,共%d个，现在是第%d个，%s，共%d页，时间开始：%s' % (n,total,(i+1),list[0],detail_page_number, ctime())
     log(l,n)
     return getTable(list, detail_page_number,n)
 def loopDetail(n):# 第n个线程
     print("线程", n, "最开始的时间：", ctime())
-    source=getUrl(n)#[[机构名，url，持有机构数量],[]],从对应txt获取
+    file_path=filePathOfEachCompanyList(n)
+    source=getUrl(file_path)#[[机构名，url，持有机构数量],[]],从对应txt获取
     total=len(source)
     sum=0
     for i in range(total):
@@ -140,7 +143,7 @@ def loopDetail(n):# 第n个线程
         except Exception as e:
             print("线程",n,"第",(i+1),"个出错",repr(e))
 
-        if len(table_result)==int(source[i][2]):#确保保存下来的每一个机构的数据是完整的，不然就放到tmp.txt里面，后续重新跑
+        if len(table_result)>=int(source[i][2]):#确保保存下来的每一个机构的数据是完整的，不然就放到tmp.txt里面，后续重新跑
             saveResult(table_result, n)
             sum += int(source[i][2])
         else:
@@ -162,8 +165,16 @@ def loopDetail(n):# 第n个线程
 #     else:
 #         print("browser 参数有误，只能为ie ，ff，chrome")
 if __name__=='__main__':
-    N = 1  # 假设分N个线程,不要调大，没有用，会炸
-    Tag = 1 # 如果正常跑，填1，如果跑之前没有成功的url（就是tmp.txt里面的），改成2
+    N = 5  # 线程数量，慎改，假设分N个线程,不要调大，没有用，cpu会炸
+
+    # Tag=1,正常跑，
+    # Tag=2,跑之前没有成功的url（就是tmp.txt里面的）
+    # Tag=3, 合并所有 “.xlsx” 结尾的excel表
+    # 关于重新跑：
+    # 1.如果第一次跑的第一步（获取机构名称）是成功的，那么重新跑的时候可以保留以“ 2020-12-17-线程1要跑的机构名单.txt” 结尾的文件，其他的删掉，保留的话程序不会重新跑第一步
+    # 2.但是，如果改了线程数量N，就全部删掉，因为每一份的数量不一样了
+    # 3.同理, 如果第二步跑完，仅有部分机构有异常(网络堵塞导致)，这些都会在tmp.txt里面，改Tag=3，跑这些个别机构就好了，已经成功的数据就没有必要重复跑
+    Tag = 1
     if Tag == 1:
         Source(N)
         startTime=ctime()
@@ -182,6 +193,28 @@ if __name__=='__main__':
 
         print(' 主线程开始和结束:%s，%s' % (startTime,ctime()))
     if Tag==2:
+        #跑tmp的机构， 没有用多线程，线程 0 指的是跑tmp的结果，并没有和其他线程一起,
+        Tmp=[]
+        if os.path.exists(file_path_of_tmp):
+            lists=getUrl(file_path_of_tmp)
+            for i in range(len(lists)):
+                table_result = []
+                company=lists[i][0]
+                url=lists[i][1]
+                num=lists[i][2]
+                try:
+                    table_result = runDetail(lists[i], len(lists), 0, i)
+                except Exception as e:
+                    print("Tmp的机构，第", (i + 1), "个出错", repr(e))
+                if len(table_result) == int(num):  # 确保保存下来的每一个机构的数据是完整的，不然就放到tmp.txt里面
+                    saveResult(table_result, 0)
+                else:
+                    Tmp.append(lists[i])
+                l = '========Tmp ,总共%d个，现在到%d，%s 结束，原本有%s个，实际%d个，时间结束：%s' % (len(lists), i + 1,company, num, len(table_result), ctime())
+                log(l, 0)
+                print(l)
+        print("Tmp 结束，时间：", ctime())
+    if Tag == 3:
         pass
 
 
